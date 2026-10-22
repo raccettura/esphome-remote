@@ -1,0 +1,9 @@
+# One remote button. Included from sharp-tv-remote.yaml with vars:
+#   name - entity name (the web UI presses buttons by this name)
+#   key  - sharp_tv::Key value from sharp_tv_codes.h
+platform: template
+name: "${name}"
+on_press:
+  - lambda: |-
+      id(last_sent).publish_state(
+          sharp_tv::press(id(ir_tx), id(code_set), sharp_tv::Key::${key}, "${name}"));

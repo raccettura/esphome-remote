@@ -1,0 +1,190 @@
+# ESPHome IR remote for a Sharp Aquos LC-70EQ10U.
+# The device runs its own Wi-Fi access point; join it from a phone or computer
+# and open http://192.168.4.1 for the remote control page. See README.md.
+
+substitutions:
+  device_name: sharp-tv-remote
+  friendly_name: Sharp TV Remote
+  ap_ssid: Sharp TV Remote
+  # GPIO driving the IR LED (through a transistor - see README).
+  ir_pin: GPIO10
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  includes:
+    - sharp_tv_codes.h
+
+esp32:
+  board: lolin_c3_mini
+  framework:
+    sdkconfig_options:
+      # The default pool of 10 sockets (shared by the web server, OTA and DHCP)
+      # runs out when a browser opens several connections at once, and the page
+      # then fails to load with "httpd_accept_conn: error in accept (23)".
+      CONFIG_LWIP_MAX_SOCKETS: "16"
+
+logger:
+
+# Access-point-only Wi-Fi: no home network needed.
+wifi:
+  ap:
+    ssid: ${ap_ssid}
+    password: !secret ap_password
+    manual_ip:
+      static_ip: 192.168.4.1
+      gateway: 192.168.4.1
+      subnet: 255.255.255.0
+  # The Lolin C3 Mini's antenna design is unreliable at full transmit power.
+  output_power: 8.5dB
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Serve our own remote page (web/remote.js + web/remote.css) instead of the
+# default ESPHome UI, which loads its script from the internet.
+web_server:
+  port: 80
+  version: 3
+  js_url: ""
+  js_include: web/remote.js
+  css_include: web/remote.css
+  # Don't stream logs to browsers; use USB (esphome logs) instead.
+  log: false
+
+remote_transmitter:
+  id: ir_tx
+  pin: ${ir_pin}
+  carrier_duty_percent: 50%
+  non_blocking: true
+
+select:
+  - platform: template
+    id: code_set
+    name: Code Set
+    # Order must match CODE_SETS in sharp_tv_codes.h.
+    options:
+      - "Sharp Aquos 2011-2016 (LC-70EQ10U)"
+      - "Sharp 2017+ Hisense-built (NEC)"
+      - "Sharp alternate NEC (basic keys only)"
+    initial_option: "Sharp Aquos 2011-2016 (LC-70EQ10U)"
+    optimistic: true
+    restore_value: true
+
+text_sensor:
+  - platform: template
+    id: last_sent
+    name: Last Sent
+
+# Code tester: send any Sharp-protocol address/command, to find codes that
+# aren't in the tables.
+number:
+  - platform: template
+    id: test_address
+    name: Test Address
+    min_value: 0
+    max_value: 31
+    step: 1
+    initial_value: 1
+    optimistic: true
+    restore_value: true
+    mode: box
+  - platform: template
+    id: test_command
+    name: Test Command
+    min_value: 0
+    max_value: 255
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+    mode: box
+
+button:
+  - platform: template
+    name: Send Test Code
+    on_press:
+      - lambda: |-
+          auto address = (uint8_t) id(test_address).state;
+          auto command = (uint8_t) id(test_command).state;
+          sharp_tv::transmit_sharp(id(ir_tx), address, command);
+          id(last_sent).publish_state("Test (Sharp " + std::to_string(address) + "/" +
+                                      std::to_string(command) + ")");
+
+  # Remote buttons. The names are what the web page presses.
+  # Top
+  - !include { file: common/tv_key.yaml, vars: { name: "Power", key: POWER } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Power On", key: POWER_ON } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Power Off", key: POWER_OFF } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Input", key: INPUT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "TV", key: TV } }
+  # Number pad
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 0", key: NUM_0 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 1", key: NUM_1 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 2", key: NUM_2 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 3", key: NUM_3 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 4", key: NUM_4 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 5", key: NUM_5 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 6", key: NUM_6 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 7", key: NUM_7 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 8", key: NUM_8 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Digit 9", key: NUM_9 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Dot", key: DOT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Ent", key: ENT } }
+  # Volume / channel
+  - !include { file: common/tv_key.yaml, vars: { name: "Vol Up", key: VOL_UP } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Vol Down", key: VOL_DOWN } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Mute", key: MUTE } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Ch Up", key: CH_UP } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Ch Down", key: CH_DOWN } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Flashback", key: FLASHBACK } }
+  # Picture / sound / misc
+  - !include { file: common/tv_key.yaml, vars: { name: "AV Mode", key: AV_MODE } }
+  - !include { file: common/tv_key.yaml, vars: { name: "View Mode", key: VIEW_MODE } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Freeze", key: FREEZE } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Audio", key: AUDIO } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Display", key: DISPLAY } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Sleep", key: SLEEP } }
+  - !include { file: common/tv_key.yaml, vars: { name: "CC", key: CC } }
+  - !include { file: common/tv_key.yaml, vars: { name: "3D", key: MODE_3D } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Fav Ch", key: FAV_CH } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Manual", key: MANUAL } }
+  # Menus and navigation
+  - !include { file: common/tv_key.yaml, vars: { name: "Menu", key: MENU } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Smart Central", key: SMART_CENTRAL } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Netflix", key: NETFLIX } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Option", key: OPTION } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Exit", key: EXIT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Return", key: RETURN } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Up", key: UP } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Down", key: DOWN } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Left", key: LEFT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Right", key: RIGHT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Enter", key: ENTER } }
+  # Coloured keys
+  - !include { file: common/tv_key.yaml, vars: { name: "A", key: KEY_A } }
+  - !include { file: common/tv_key.yaml, vars: { name: "B", key: KEY_B } }
+  - !include { file: common/tv_key.yaml, vars: { name: "C", key: KEY_C } }
+  - !include { file: common/tv_key.yaml, vars: { name: "D", key: KEY_D } }
+  # Playback
+  - !include { file: common/tv_key.yaml, vars: { name: "Rewind", key: REWIND } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Play", key: PLAY } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Fast Forward", key: FAST_FORWARD } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Prev", key: SKIP_BACK } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Pause", key: PAUSE } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Next", key: SKIP_FORWARD } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Stop", key: STOP } }
+  # Favourite apps
+  - !include { file: common/tv_key.yaml, vars: { name: "App 1", key: FAV_APP_1 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "App 2", key: FAV_APP_2 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "App 3", key: FAV_APP_3 } }
+  # Discrete inputs (not on the physical remote)
+  - !include { file: common/tv_key.yaml, vars: { name: "HDMI 1", key: HDMI_1 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "HDMI 2", key: HDMI_2 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "HDMI 3", key: HDMI_3 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "HDMI 4", key: HDMI_4 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Component", key: COMPONENT } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Video 1", key: VIDEO_1 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "Video 2", key: VIDEO_2 } }
+  - !include { file: common/tv_key.yaml, vars: { name: "PC", key: PC } }

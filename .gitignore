@@ -1,0 +1,21 @@
+# Passwords (copy secrets.yaml.example to secrets.yaml)
+secrets.yaml
+
+# ESPHome build output and caches
+.esphome/
+.pioenvs/
+.piolibdeps/
+*.bin
+
+# Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
